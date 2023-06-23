@@ -4,6 +4,7 @@
 package views
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -32,7 +33,9 @@ type Show interface {
 // pre-constructed json plan, because the json plan format itself doesn't
 // include the additional data required by Display().
 type JsonPlan struct {
-	Plan      *jsonformat.Plan
+	JSONBytes []byte
+	// TODO struct field doc comments
+	Redacted  bool
 	Mode      plans.Mode
 	Opts      []jsonformat.PlanRendererOpt
 	RunHeader string
@@ -65,8 +68,19 @@ func (v *ShowHuman) Display(config *configs.Config, plan *plans.Plan, jsonPlan *
 	// Prefer to display a pre-built JSON plan, if we got one; then, fall back
 	// to building one ourselves.
 	if jsonPlan != nil {
+		if !jsonPlan.Redacted {
+			v.view.streams.Eprintf("Didn't get renderable JSON plan format for human display")
+			return 1
+		}
+		// The redacted json plan format can be decoded into a jsonformat.Plan
+		p := jsonformat.Plan{}
+		r := bytes.NewReader(jsonPlan.JSONBytes)
+		if err := json.NewDecoder(r).Decode(&p); err != nil {
+			v.view.streams.Eprintf("Couldn't decode renderable JSON plan format: %s", err)
+		}
+
 		v.view.streams.Print(v.view.colorize.Color(jsonPlan.RunHeader))
-		renderer.RenderHumanPlan(*jsonPlan.Plan, jsonPlan.Mode, jsonPlan.Opts...)
+		renderer.RenderHumanPlan(p, jsonPlan.Mode, jsonPlan.Opts...)
 	} else if plan != nil {
 		outputs, changed, drift, attrs, err := jsonplan.MarshalForRenderer(plan, schemas)
 		if err != nil {
@@ -132,13 +146,11 @@ func (v *ShowJSON) Display(config *configs.Config, plan *plans.Plan, jsonPlan *J
 	// Prefer to display a pre-built JSON plan, if we got one; then, fall back
 	// to building one ourselves.
 	if jsonPlan != nil {
-		// TODO re-marshalling is gross... oh wait lol actually it doesn't even work
-		j, err := json.Marshal(jsonPlan.Plan)
-		if err != nil {
-			v.view.streams.Eprintf("Failed to marshal plan to json: %s", err)
+		if jsonPlan.Redacted {
+			v.view.streams.Eprintf("Didn't get external JSON plan format")
 			return 1
 		}
-		v.view.streams.Println(string(j))
+		v.view.streams.Println(string(jsonPlan.JSONBytes))
 	} else if plan != nil {
 		jsonPlan, err := jsonplan.Marshal(config, plan, stateFile, schemas)
 
