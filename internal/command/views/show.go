@@ -132,6 +132,7 @@ func (v *ShowJSON) Display(config *configs.Config, plan *plans.Plan, jsonPlan *J
 	// Prefer to display a pre-built JSON plan, if we got one; then, fall back
 	// to building one ourselves.
 	if jsonPlan != nil {
+		// TODO re-marshalling is gross... oh wait lol actually it doesn't even work
 		j, err := json.Marshal(jsonPlan.Plan)
 		if err != nil {
 			v.view.streams.Eprintf("Failed to marshal plan to json: %s", err)

@@ -5,6 +5,7 @@ package cloud
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -556,6 +557,15 @@ func (b *Cloud) confirm(stopCtx context.Context, op *backend.Operation, opts *te
 // intended for use by higher-level packages (like the `show` command) that
 // should not need to know things about the TFC API or go-tfe's resource types.
 func (b *Cloud) ReadRedactedPlanForRun(ctx context.Context, runID, hostname string) (*jsonformat.Plan, plans.Mode, []jsonformat.PlanRendererOpt, string, error) {
+	return b.readPlanForRun(ctx, runID, hostname, true)
+}
+
+func (b *Cloud) ReadUnredactedPlanForRun(ctx context.Context, runID, hostname string) (*jsonformat.Plan, plans.Mode, []jsonformat.PlanRendererOpt, string, error) {
+	return b.readPlanForRun(ctx, runID, hostname, false)
+}
+
+func (b *Cloud) readPlanForRun(ctx context.Context, runID, hostname string, redacted bool) (*jsonformat.Plan, plans.Mode, []jsonformat.PlanRendererOpt, string, error) {
+	var jsonPlan *jsonformat.Plan
 	mode := plans.NormalMode
 	var opts []jsonformat.PlanRendererOpt
 	header := ""
@@ -594,8 +604,12 @@ func (b *Cloud) ReadRedactedPlanForRun(ctx context.Context, runID, hostname stri
 		return nil, mode, opts, header, err
 	}
 
-	// Fetch the redacted json plan!
-	jsonPlan, err := readRedactedPlan(ctx, b.client.BaseURL(), b.token, r.Plan.ID)
+	// Fetch the json plan!
+	if redacted {
+		jsonPlan, err = readRedactedPlan(ctx, b.client.BaseURL(), b.token, r.Plan.ID)
+	} else {
+		jsonPlan, err = b.readUnredactedPlan(ctx, r.Plan.ID)
+	}
 	if err != nil {
 		return nil, mode, opts, header, err
 	}
@@ -604,6 +618,22 @@ func (b *Cloud) ReadRedactedPlanForRun(ctx context.Context, runID, hostname stri
 	header = fmt.Sprintf(runHeader, b.hostname, b.organization, r.Workspace.Name, r.ID)
 
 	return jsonPlan, mode, opts, header, nil
+}
+
+func (b *Cloud) readUnredactedPlan(ctx context.Context, planID string) (*jsonformat.Plan, error) {
+	j, err := b.client.Plans.ReadJSONOutput(ctx, planID)
+	if err != nil {
+		return nil, err
+	}
+
+	p := &jsonformat.Plan{}
+	r := bytes.NewReader(j)
+	err = json.NewDecoder(r).Decode(p)
+	if err != nil {
+		return nil, err
+	}
+
+	return p, nil
 }
 
 // This method will fetch the redacted plan output and marshal the response into

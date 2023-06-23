@@ -206,14 +206,16 @@ func (c *ShowCommand) getPlanFromPath(path string) (*plans.Plan, *views.JsonPlan
 		plan, stateFile, config, err = getDataFromPlanfileReader(lp)
 	} else if cp, ok := pf.Cloud(); ok {
 		if c.viewType == arguments.ViewHuman {
-			jsonPlan, err = c.getRedactedDataFromCloudPlan(cp)
+			jsonPlan, err = c.getDataFromCloudPlan(cp, true)
+		} else if c.viewType == arguments.ViewJSON {
+			jsonPlan, err = c.getDataFromCloudPlan(cp, false)
 		}
 	}
 
 	return plan, jsonPlan, stateFile, config, err
 }
 
-func (c *ShowCommand) getRedactedDataFromCloudPlan(plan *cloudplan.SavedPlanBookmark) (*views.JsonPlan, error) {
+func (c *ShowCommand) getDataFromCloudPlan(plan *cloudplan.SavedPlanBookmark, redacted bool) (*views.JsonPlan, error) {
 	// - set up backend
 	// - fetch the run with include: Plan
 	// - somehow get the result of calling the private cloud.readRedactedPlan() function (not a backend method)
@@ -231,16 +233,33 @@ func (c *ShowCommand) getRedactedDataFromCloudPlan(plan *cloudplan.SavedPlanBook
 		return nil, fmt.Errorf("can't show a saved cloud plan unless the current root module is connected to Terraform Cloud")
 	}
 
-	jsonPlan, mode, opts, runHeader, err := cl.ReadRedactedPlanForRun(context.Background(), plan.RunID, plan.Hostname)
-	if err != nil {
-		return nil, err
+	var result *views.JsonPlan
+
+	if redacted {
+		jsonPlan, mode, opts, runHeader, err := cl.ReadRedactedPlanForRun(context.Background(), plan.RunID, plan.Hostname)
+		if err != nil {
+			return nil, err
+		}
+		result = &views.JsonPlan{
+			Plan:      jsonPlan,
+			Mode:      mode,
+			Opts:      opts,
+			RunHeader: runHeader,
+		}
+	} else {
+		jsonPlan, mode, opts, runHeader, err := cl.ReadUnredactedPlanForRun(context.Background(), plan.RunID, plan.Hostname)
+		if err != nil {
+			return nil, err
+		}
+		result = &views.JsonPlan{
+			Plan:      jsonPlan,
+			Mode:      mode,
+			Opts:      opts,
+			RunHeader: runHeader,
+		}
 	}
-	return &views.JsonPlan{
-		Plan:      jsonPlan,
-		Mode:      mode,
-		Opts:      opts,
-		RunHeader: runHeader,
-	}, nil
+
+	return result, nil
 }
 
 // getDataFromPlanfileReader returns a plan, statefile, and config, extracted from a local plan file.
