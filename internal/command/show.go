@@ -88,10 +88,10 @@ func (c *ShowCommand) Synopsis() string {
 	return "Show the current state or a saved plan"
 }
 
-func (c *ShowCommand) show(path string) (*plans.Plan, *views.JsonPlan, *statefile.File, *configs.Config, *terraform.Schemas, tfdiags.Diagnostics) {
+func (c *ShowCommand) show(path string) (*plans.Plan, *cloudplan.PlanJSON, *statefile.File, *configs.Config, *terraform.Schemas, tfdiags.Diagnostics) {
 	var diags, showDiags tfdiags.Diagnostics
 	var plan *plans.Plan
-	var jsonPlan *views.JsonPlan
+	var jsonPlan *cloudplan.PlanJSON
 	var stateFile *statefile.File
 	var config *configs.Config
 	var schemas *terraform.Schemas
@@ -155,11 +155,11 @@ func (c *ShowCommand) showFromLatestStateSnapshot() (*statefile.File, tfdiags.Di
 	return stateFile, diags
 }
 
-func (c *ShowCommand) showFromPath(path string) (*plans.Plan, *views.JsonPlan, *statefile.File, *configs.Config, tfdiags.Diagnostics) {
+func (c *ShowCommand) showFromPath(path string) (*plans.Plan, *cloudplan.PlanJSON, *statefile.File, *configs.Config, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 	var planErr, stateErr error
 	var plan *plans.Plan
-	var jsonPlan *views.JsonPlan
+	var jsonPlan *cloudplan.PlanJSON
 	var stateFile *statefile.File
 	var config *configs.Config
 
@@ -190,10 +190,10 @@ func (c *ShowCommand) showFromPath(path string) (*plans.Plan, *views.JsonPlan, *
 // yield a json plan, and cloud plans do not yield real plan/state/config
 // structs. An error generally suggests that the given path is either a
 // directory or a statefile.
-func (c *ShowCommand) getPlanFromPath(path string) (*plans.Plan, *views.JsonPlan, *statefile.File, *configs.Config, error) {
+func (c *ShowCommand) getPlanFromPath(path string) (*plans.Plan, *cloudplan.PlanJSON, *statefile.File, *configs.Config, error) {
 	var err error
 	var plan *plans.Plan
-	var jsonPlan *views.JsonPlan
+	var jsonPlan *cloudplan.PlanJSON
 	var stateFile *statefile.File
 	var config *configs.Config
 
@@ -215,7 +215,7 @@ func (c *ShowCommand) getPlanFromPath(path string) (*plans.Plan, *views.JsonPlan
 	return plan, jsonPlan, stateFile, config, err
 }
 
-func (c *ShowCommand) getDataFromCloudPlan(plan *cloudplan.SavedPlanBookmark, redacted bool) (*views.JsonPlan, error) {
+func (c *ShowCommand) getDataFromCloudPlan(plan *cloudplan.SavedPlanBookmark, redacted bool) (*cloudplan.PlanJSON, error) {
 	// - set up backend
 	// - fetch the run with include: Plan
 	// - somehow get the result of calling the private cloud.readRedactedPlan() function (not a backend method)
@@ -233,14 +233,14 @@ func (c *ShowCommand) getDataFromCloudPlan(plan *cloudplan.SavedPlanBookmark, re
 		return nil, fmt.Errorf("can't show a saved cloud plan unless the current root module is connected to Terraform Cloud")
 	}
 
-	var result *views.JsonPlan
+	var result *cloudplan.PlanJSON
 
 	if redacted {
 		jsonPlan, mode, opts, runHeader, err := cl.ReadRedactedPlanForRun(context.Background(), plan.RunID, plan.Hostname)
 		if err != nil {
 			return nil, err
 		}
-		result = &views.JsonPlan{
+		result = &cloudplan.PlanJSON{
 			Plan:      jsonPlan,
 			Mode:      mode,
 			Opts:      opts,
@@ -251,7 +251,7 @@ func (c *ShowCommand) getDataFromCloudPlan(plan *cloudplan.SavedPlanBookmark, re
 		if err != nil {
 			return nil, err
 		}
-		result = &views.JsonPlan{
+		result = &cloudplan.PlanJSON{
 			Plan:      jsonPlan,
 			Mode:      mode,
 			Opts:      opts,

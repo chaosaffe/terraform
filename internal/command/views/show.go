@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/hashicorp/terraform/internal/cloud/cloudplan"
 	"github.com/hashicorp/terraform/internal/command/arguments"
 	"github.com/hashicorp/terraform/internal/command/jsonformat"
 	"github.com/hashicorp/terraform/internal/command/jsonplan"
@@ -22,23 +23,10 @@ import (
 
 type Show interface {
 	// Display renders the plan, if it is available. If plan is nil, it renders the statefile.
-	Display(config *configs.Config, plan *plans.Plan, jsonPlan *JsonPlan, stateFile *statefile.File, schemas *terraform.Schemas) int
+	Display(config *configs.Config, plan *plans.Plan, planJSON *cloudplan.PlanJSON, stateFile *statefile.File, schemas *terraform.Schemas) int
 
 	// Diagnostics renders early diagnostics, resulting from argument parsing.
 	Diagnostics(diags tfdiags.Diagnostics)
-}
-
-// JsonPlan is a wrapper struct that associates a plan mode and renderer options
-// with a jsonformat.Plan. This is useful when terraform show receives a
-// pre-constructed json plan, because the json plan format itself doesn't
-// include the additional data required by Display().
-type JsonPlan struct {
-	JSONBytes []byte
-	// TODO struct field doc comments
-	Redacted  bool
-	Mode      plans.Mode
-	Opts      []jsonformat.PlanRendererOpt
-	RunHeader string
 }
 
 func NewShow(vt arguments.ViewType, view *View) Show {
@@ -58,7 +46,7 @@ type ShowHuman struct {
 
 var _ Show = (*ShowHuman)(nil)
 
-func (v *ShowHuman) Display(config *configs.Config, plan *plans.Plan, jsonPlan *JsonPlan, stateFile *statefile.File, schemas *terraform.Schemas) int {
+func (v *ShowHuman) Display(config *configs.Config, plan *plans.Plan, planJSON *cloudplan.PlanJSON, stateFile *statefile.File, schemas *terraform.Schemas) int {
 	renderer := jsonformat.Renderer{
 		Colorize:            v.view.colorize,
 		Streams:             v.view.streams,
@@ -67,20 +55,20 @@ func (v *ShowHuman) Display(config *configs.Config, plan *plans.Plan, jsonPlan *
 
 	// Prefer to display a pre-built JSON plan, if we got one; then, fall back
 	// to building one ourselves.
-	if jsonPlan != nil {
-		if !jsonPlan.Redacted {
+	if planJSON != nil {
+		if !planJSON.Redacted {
 			v.view.streams.Eprintf("Didn't get renderable JSON plan format for human display")
 			return 1
 		}
 		// The redacted json plan format can be decoded into a jsonformat.Plan
 		p := jsonformat.Plan{}
-		r := bytes.NewReader(jsonPlan.JSONBytes)
+		r := bytes.NewReader(planJSON.JSONBytes)
 		if err := json.NewDecoder(r).Decode(&p); err != nil {
 			v.view.streams.Eprintf("Couldn't decode renderable JSON plan format: %s", err)
 		}
 
-		v.view.streams.Print(v.view.colorize.Color(jsonPlan.RunHeader))
-		renderer.RenderHumanPlan(p, jsonPlan.Mode, jsonPlan.Opts...)
+		v.view.streams.Print(v.view.colorize.Color(planJSON.RunHeader))
+		renderer.RenderHumanPlan(p, planJSON.Mode, planJSON.Opts...)
 	} else if plan != nil {
 		outputs, changed, drift, attrs, err := jsonplan.MarshalForRenderer(plan, schemas)
 		if err != nil {
@@ -142,23 +130,23 @@ type ShowJSON struct {
 
 var _ Show = (*ShowJSON)(nil)
 
-func (v *ShowJSON) Display(config *configs.Config, plan *plans.Plan, jsonPlan *JsonPlan, stateFile *statefile.File, schemas *terraform.Schemas) int {
+func (v *ShowJSON) Display(config *configs.Config, plan *plans.Plan, planJSON *cloudplan.PlanJSON, stateFile *statefile.File, schemas *terraform.Schemas) int {
 	// Prefer to display a pre-built JSON plan, if we got one; then, fall back
 	// to building one ourselves.
-	if jsonPlan != nil {
-		if jsonPlan.Redacted {
+	if planJSON != nil {
+		if planJSON.Redacted {
 			v.view.streams.Eprintf("Didn't get external JSON plan format")
 			return 1
 		}
-		v.view.streams.Println(string(jsonPlan.JSONBytes))
+		v.view.streams.Println(string(planJSON.JSONBytes))
 	} else if plan != nil {
-		jsonPlan, err := jsonplan.Marshal(config, plan, stateFile, schemas)
+		planJSON, err := jsonplan.Marshal(config, plan, stateFile, schemas)
 
 		if err != nil {
 			v.view.streams.Eprintf("Failed to marshal plan to json: %s", err)
 			return 1
 		}
-		v.view.streams.Println(string(jsonPlan))
+		v.view.streams.Println(string(planJSON))
 	} else {
 		// It is possible that there is neither state nor a plan.
 		// That's ok, we'll just return an empty object.
