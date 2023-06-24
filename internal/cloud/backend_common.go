@@ -22,6 +22,7 @@ import (
 	tfe "github.com/hashicorp/go-tfe"
 	"github.com/hashicorp/jsonapi"
 	"github.com/hashicorp/terraform/internal/backend"
+	"github.com/hashicorp/terraform/internal/cloud/cloudplan"
 	"github.com/hashicorp/terraform/internal/command/jsonformat"
 	"github.com/hashicorp/terraform/internal/logging"
 	"github.com/hashicorp/terraform/internal/plans"
@@ -551,34 +552,26 @@ func (b *Cloud) confirm(stopCtx context.Context, op *backend.Operation, opts *te
 	return <-result
 }
 
-// ReadRedactedPlanForRun retrieves the redacted plan JSON for an existing run
-// and returns it as the struct type expected by jsonformat.Renderer, along with
-// incidental values that might be important for displaying that plan. It is
-// intended for use by higher-level packages (like the `show` command) that
-// should not need to know things about the TFC API or go-tfe's resource types.
-func (b *Cloud) ReadRedactedPlanForRun(ctx context.Context, runID, hostname string) (*jsonformat.Plan, plans.Mode, []jsonformat.PlanRendererOpt, string, error) {
-	return b.readPlanForRun(ctx, runID, hostname, true)
-}
-
-func (b *Cloud) ReadUnredactedPlanForRun(ctx context.Context, runID, hostname string) (*jsonformat.Plan, plans.Mode, []jsonformat.PlanRendererOpt, string, error) {
-	return b.readPlanForRun(ctx, runID, hostname, false)
-}
-
-func (b *Cloud) readPlanForRun(ctx context.Context, runID, hostname string, redacted bool) (*jsonformat.Plan, plans.Mode, []jsonformat.PlanRendererOpt, string, error) {
-	var jsonPlan *jsonformat.Plan
+// ShowPlanForRun downloads the JSON plan output for the specified cloud run
+// (either the redacted or unredacted format, per the caller's request), and
+// returns it in a cloudplan.PlanJSON wrapper struct (along with various
+// metadata required by terraform show). It's intended for use by the terraform
+// show command, in order to format and display a saved cloud plan.
+func (b *Cloud) ShowPlanForRun(ctx context.Context, runID, runHostname string, redacted bool) (*cloudplan.PlanJSON, error) {
+	var jsonBytes []byte
 	mode := plans.NormalMode
 	var opts []jsonformat.PlanRendererOpt
 	header := ""
 
 	// Bail early if wrong hostname
-	if hostname != b.hostname {
-		return nil, mode, opts, header, fmt.Errorf("hostname for run (%s) does not match the configured cloud integration (%s)", hostname, b.hostname)
+	if runHostname != b.hostname {
+		return nil, fmt.Errorf("hostname for run (%s) does not match the configured cloud integration (%s)", runHostname, b.hostname)
 	}
 
 	// Get run and plan
 	r, err := b.client.Runs.ReadWithOptions(ctx, runID, &tfe.RunReadOptions{Include: []tfe.RunIncludeOpt{tfe.RunPlan, tfe.RunWorkspace}})
 	if err != nil {
-		return nil, mode, opts, header, err
+		return nil, err
 	}
 
 	// Sort out the run mode
@@ -601,39 +594,31 @@ func (b *Cloud) readPlanForRun(ctx context.Context, runID, hostname string, reda
 	default:
 		// Bail, we can't use this.
 		err = fmt.Errorf("can't display a cloud plan that is currently %s", r.Plan.Status)
-		return nil, mode, opts, header, err
+		return nil, err
 	}
 
 	// Fetch the json plan!
 	if redacted {
-		jsonPlan, err = readRedactedPlan(ctx, b.client.BaseURL(), b.token, r.Plan.ID)
+		jsonBytes, err = readRedactedPlan(ctx, b.client.BaseURL(), b.token, r.Plan.ID)
 	} else {
-		jsonPlan, err = b.readUnredactedPlan(ctx, r.Plan.ID)
+		jsonBytes, err = b.client.Plans.ReadJSONOutput(ctx, r.Plan.ID)
 	}
 	if err != nil {
-		return nil, mode, opts, header, err
+		return nil, err
 	}
 
 	// Format a run header
 	header = fmt.Sprintf(runHeader, b.hostname, b.organization, r.Workspace.Name, r.ID)
 
-	return jsonPlan, mode, opts, header, nil
-}
-
-func (b *Cloud) readUnredactedPlan(ctx context.Context, planID string) (*jsonformat.Plan, error) {
-	j, err := b.client.Plans.ReadJSONOutput(ctx, planID)
-	if err != nil {
-		return nil, err
+	out := &cloudplan.PlanJSON{
+		JSONBytes: jsonBytes,
+		Redacted:  redacted,
+		Mode:      mode,
+		Opts:      opts,
+		RunHeader: header,
 	}
 
-	p := &jsonformat.Plan{}
-	r := bytes.NewReader(j)
-	err = json.NewDecoder(r).Decode(p)
-	if err != nil {
-		return nil, err
-	}
-
-	return p, nil
+	return out, nil
 }
 
 // This method will fetch the redacted plan output as a byte slice, mirroring
