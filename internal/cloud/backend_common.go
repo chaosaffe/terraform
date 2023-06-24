@@ -636,11 +636,12 @@ func (b *Cloud) readUnredactedPlan(ctx context.Context, planID string) (*jsonfor
 	return p, nil
 }
 
-// This method will fetch the redacted plan output and marshal the response into
-// a struct the jsonformat.Renderer expects.
+// This method will fetch the redacted plan output as a byte slice, mirroring
+// the behavior of the similar Plans.ReadJSONOutput method.
 //
-// Note: Apologies for the lengthy definition, this is a result of not being able to mock receiver methods
-var readRedactedPlan func(context.Context, url.URL, string, string) (*jsonformat.Plan, error) = func(ctx context.Context, baseURL url.URL, token string, planID string) (*jsonformat.Plan, error) {
+// Note: Apologies for the lengthy definition, this is a result of not being
+// able to mock receiver methods
+var readRedactedPlan func(context.Context, url.URL, string, string) ([]byte, error) = func(ctx context.Context, baseURL url.URL, token string, planID string) ([]byte, error) {
 	client := retryablehttp.NewClient()
 	client.RetryMax = 10
 	client.RetryWaitMin = 100 * time.Millisecond
@@ -661,7 +662,6 @@ var readRedactedPlan func(context.Context, url.URL, string, string) (*jsonformat
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
 
-	p := &jsonformat.Plan{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -672,14 +672,21 @@ var readRedactedPlan func(context.Context, url.URL, string, string) (*jsonformat
 		return nil, err
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(p); err != nil {
-		return nil, err
-	}
+	b, err := io.ReadAll(resp.Body)
 
-	return p, nil
+	return b, nil
 }
 
-// TODO equivalent function to ^^ for unredacted json plan. Can use client.Plans.ReadJSONOutput().
+// decodeRedactedPlan marshals a downloaded redacted plan into a struct the
+// jsonformat.Renderer expects.
+func decodeRedactedPlan(jsonBytes []byte) (*jsonformat.Plan, error) {
+	r := bytes.NewReader(jsonBytes)
+	p := &jsonformat.Plan{}
+	if err := json.NewDecoder(r).Decode(p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
 
 func checkResponseCode(r *http.Response) error {
 	if r.StatusCode >= 200 && r.StatusCode <= 299 {
