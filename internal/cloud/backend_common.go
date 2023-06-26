@@ -562,6 +562,7 @@ func (b *Cloud) ShowPlanForRun(ctx context.Context, runID, runHostname string, r
 	mode := plans.NormalMode
 	var opts []jsonformat.PlanRendererOpt
 	header := ""
+	footer := ""
 
 	// Bail early if wrong hostname
 	if runHostname != b.hostname {
@@ -617,8 +618,10 @@ func (b *Cloud) ShowPlanForRun(ctx context.Context, runID, runHostname string, r
 
 	// Format a run header
 	header = fmt.Sprintf(runHeader, b.hostname, b.organization, r.Workspace.Name, r.ID)
-	header = header + statusHeader(r.Status, r.Actions.IsConfirmable, r.Workspace.Locked)
 	header = strings.TrimSpace(header)
+	// Format a run footer
+	footer = statusFooter(r.Status, r.Actions.IsConfirmable, r.Workspace.Locked)
+	footer = strings.TrimSpace(footer)
 
 	out := &cloudplan.PlanJSON{
 		JSONBytes: jsonBytes,
@@ -626,6 +629,7 @@ func (b *Cloud) ShowPlanForRun(ctx context.Context, runID, runHostname string, r
 		Mode:      mode,
 		Opts:      opts,
 		RunHeader: header,
+		RunFooter: footer,
 	}
 
 	return out, nil
@@ -727,7 +731,7 @@ func decodeErrorPayload(r *http.Response) ([]string, error) {
 	return errs, nil
 }
 
-func statusHeader(status tfe.RunStatus, isConfirmable, locked bool) string {
+func statusFooter(status tfe.RunStatus, isConfirmable, locked bool) string {
 	statusText := strings.ReplaceAll(string(status), "_", " ")
 	statusColor := "red"
 	statusNote := "not confirmable"
@@ -741,10 +745,10 @@ func statusHeader(status tfe.RunStatus, isConfirmable, locked bool) string {
 		lockedColor = "red"
 		lockedNote = "locked"
 	}
-	return fmt.Sprintf(statusHeaderText, statusColor, statusText, statusNote, lockedColor, lockedNote)
+	return fmt.Sprintf(statusFooterText, statusColor, statusText, statusNote, lockedColor, lockedNote)
 }
 
-const statusHeaderText = `
-[reset][%s]Run is %s (%s)[reset]
+const statusFooterText = `
+[reset][%s]Run status: %s (%s)[reset]
 [%s]Workspace is %s[reset]
 `

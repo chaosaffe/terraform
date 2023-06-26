@@ -31,4 +31,7 @@ type PlanJSON struct {
 	// A human-readable header with a link to view the associated run in the
 	// Terraform Cloud UI.
 	RunHeader string
+	// A human-readable footer with information relevant to the likely next
+	// actions for this plan.
+	RunFooter string
 }

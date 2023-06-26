@@ -69,6 +69,7 @@ func (v *ShowHuman) Display(config *configs.Config, plan *plans.Plan, planJSON *
 
 		v.view.streams.Print(v.view.colorize.Color(planJSON.RunHeader + "\n"))
 		renderer.RenderHumanPlan(p, planJSON.Mode, planJSON.Opts...)
+		v.view.streams.Print(v.view.colorize.Color("\n" + planJSON.RunFooter + "\n"))
 	} else if plan != nil {
 		outputs, changed, drift, attrs, err := jsonplan.MarshalForRenderer(plan, schemas)
 		if err != nil {
