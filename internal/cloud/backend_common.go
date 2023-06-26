@@ -667,7 +667,7 @@ var readRedactedPlan func(context.Context, url.URL, string, string) ([]byte, err
 
 	b, err := io.ReadAll(resp.Body)
 
-	return b, nil
+	return b, err
 }
 
 // decodeRedactedPlan marshals a downloaded redacted plan into a struct the
