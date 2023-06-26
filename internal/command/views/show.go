@@ -67,7 +67,7 @@ func (v *ShowHuman) Display(config *configs.Config, plan *plans.Plan, planJSON *
 			v.view.streams.Eprintf("Couldn't decode renderable JSON plan format: %s", err)
 		}
 
-		v.view.streams.Print(v.view.colorize.Color(planJSON.RunHeader))
+		v.view.streams.Print(v.view.colorize.Color(planJSON.RunHeader + "\n"))
 		renderer.RenderHumanPlan(p, planJSON.Mode, planJSON.Opts...)
 	} else if plan != nil {
 		outputs, changed, drift, attrs, err := jsonplan.MarshalForRenderer(plan, schemas)

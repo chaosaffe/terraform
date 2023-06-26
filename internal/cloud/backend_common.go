@@ -617,6 +617,8 @@ func (b *Cloud) ShowPlanForRun(ctx context.Context, runID, runHostname string, r
 
 	// Format a run header
 	header = fmt.Sprintf(runHeader, b.hostname, b.organization, r.Workspace.Name, r.ID)
+	header = header + statusHeader(r.Status, r.Actions.IsConfirmable, r.Workspace.Locked)
+	header = strings.TrimSpace(header)
 
 	out := &cloudplan.PlanJSON{
 		JSONBytes: jsonBytes,
@@ -724,3 +726,25 @@ func decodeErrorPayload(r *http.Response) ([]string, error) {
 
 	return errs, nil
 }
+
+func statusHeader(status tfe.RunStatus, isConfirmable, locked bool) string {
+	statusText := strings.ReplaceAll(string(status), "_", " ")
+	statusColor := "red"
+	statusNote := "not confirmable"
+	if isConfirmable {
+		statusColor = "green"
+		statusNote = "confirmable"
+	}
+	lockedColor := "green"
+	lockedNote := "unlocked"
+	if locked {
+		lockedColor = "red"
+		lockedNote = "locked"
+	}
+	return fmt.Sprintf(statusHeaderText, statusColor, statusText, statusNote, lockedColor, lockedNote)
+}
+
+const statusHeaderText = `
+[reset][%s]Run is %s (%s)[reset]
+[%s]Workspace is %s[reset]
+`
